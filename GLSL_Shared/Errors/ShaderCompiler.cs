@@ -26,7 +26,7 @@ namespace DMS.GLSL.Errors
 
 		internal delegate void OnCompilationFinished(IEnumerable<GLSLhelper.ShaderLogLine> errorLog);
 
-		internal void RequestCompile(string shaderCode, string sShaderType, OnCompilationFinished compilationFinishedHandler, string documentDir)
+		internal void RequestCompile(string shaderCode, string sShaderType, OnCompilationFinished compilationFinishedHandler, string documentDir, int lineOffset = 0)
 		{
 			StartGlThreadOnce();
 			while (compileRequests.TryTake(out _)) ; //remove pending compiles
@@ -49,6 +49,18 @@ namespace DMS.GLSL.Errors
 			public OnCompilationFinished CompilationFinished { get; }
 			public string DocumentDir { get; }
 		}
+
+        private struct MultiPartShaderData
+        {
+            public MultiPartShaderData(string shaderCode, int lineOffset)
+            {
+                ShaderCode = shaderCode;
+                LineOffset = lineOffset;
+            }
+
+            public string ShaderCode { get; set; }
+            public int LineOffset { get; set; }
+        }
 
 		private static readonly IReadOnlyDictionary<string, ShaderType> mappingContentTypeToShaderType = new Dictionary<string, ShaderType>()
 		{
@@ -80,13 +92,13 @@ namespace DMS.GLSL.Errors
 			{
 				var compileData = compileRequests.Take(); //block until compile requested
 				var expandedCode = ExpandedCode(compileData.ShaderCode, compileData.DocumentDir, settings);
-				var log = Compile(expandedCode, compileData.ShaderType, logger, settings);
-				var errorLog = new GLSLhelper.ShaderLogParser(log);
-				if (!string.IsNullOrWhiteSpace(log) && settings.PrintShaderCompilerLog)
-				{
-					logger.Log($"Dumping shader log:\n{log}\n", false);
-				}
-				compileData.CompilationFinished?.Invoke(errorLog.Lines);
+				var errorLogLines = Compile(expandedCode, compileData.ShaderType, logger, settings);
+                var rawLog = string.Join("\n", errorLogLines);
+                if (!string.IsNullOrWhiteSpace(rawLog) && settings.PrintShaderCompilerLog)
+                {
+                    logger.Log($"Dumping shader log:\n{rawLog}\n", false);
+                }
+                compileData.CompilationFinished?.Invoke(errorLogLines);
 			}
 		}
 
@@ -159,21 +171,87 @@ namespace DMS.GLSL.Errors
 			}
 		}
 
-		private static string Compile(string shaderCode, string shaderContentType, ILogger logger, ICompilerSettings settings)
+        private static List<MultiPartShaderData> ExtractShaders(string shaderCode)
+        {
+            if (!shaderCode.Contains("#shader")) return new List<MultiPartShaderData> { new MultiPartShaderData(shaderCode, 0) };
+
+            var shaders = new List<MultiPartShaderData>();
+
+            int shaderIndex = -1;
+            int offset = 0;
+            MultiPartShaderData currentShader = default;
+            StringReader reader = new StringReader(shaderCode);
+            string line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                offset++;
+
+                if (line.Contains("#shader"))
+                {
+                    if (shaderIndex != -1)
+                    {
+                        shaders.Insert(shaderIndex, currentShader);
+                    }
+                   
+                    currentShader = new MultiPartShaderData("", offset);
+                    shaderIndex++;
+                    continue;
+                }
+
+                currentShader.ShaderCode += line + Environment.NewLine;
+            }
+            // Add last shader to the list
+            shaders.Insert(shaderIndex, currentShader);
+
+            return shaders;
+        }
+
+        private static IEnumerable<GLSLhelper.ShaderLogLine> Compile(string shaderCode, string shaderContentType, ILogger logger, ICompilerSettings settings)
 		{
-			if (ShaderContentTypes.AutoDetect == shaderContentType)
-			{
-				shaderContentType = AutoDetectShaderContentType(shaderCode);
-				logger.Log($"Auto detecting shader type to '{shaderContentType}'", true);
-			}
-			if (string.IsNullOrWhiteSpace(settings.ExternalCompilerExeFilePath))
-			{
-				return CompileOnGPU(shaderCode, shaderContentType, logger);
-			}
-			else
-			{
-				return CompileExternal(shaderCode, shaderContentType, logger, settings);
-			}
+            //if multi shader, compile for each and add the offset to the logging
+
+            var shaderLogs = new List<GLSLhelper.ShaderLogLine>();
+
+            var shaders = ExtractShaders(shaderCode);
+
+            if (shaders.Count > 1 && shaderContentType != ShaderContentTypes.AutoDetect)
+            {
+                var message = $"Error: Multiple shaders are only allowed with content type: {ShaderContentTypes.AutoDetect }";
+                logger.Log(message, true);
+                return new List<GLSLhelper.ShaderLogLine>();
+            }
+
+            foreach (var shader in shaders)
+            {
+                string log;
+
+                if (ShaderContentTypes.AutoDetect == shaderContentType)
+                {
+                    shaderContentType = AutoDetectShaderContentType(shader.ShaderCode);
+                    logger.Log($"Auto detecting shader type to '{shaderContentType}'", true);
+                }
+                if (string.IsNullOrWhiteSpace(settings.ExternalCompilerExeFilePath))
+                {
+                    log = CompileOnGPU(shader.ShaderCode, shaderContentType, logger);
+                }
+                else
+                {
+                    log = CompileExternal(shader.ShaderCode, shaderContentType, logger, settings);
+                }
+
+                var errorLog = new GLSLhelper.ShaderLogParser(log);
+
+                if (shader.LineOffset == 0) continue;
+
+                foreach (var error in errorLog.Lines)
+                {
+                    if (error.LineNumber.HasValue) error.LineNumber += shader.LineOffset;
+                }
+
+                shaderLogs.AddRange(errorLog.Lines);
+            }
+
+            return shaderLogs;
 		}
 
 		private static string CompileExternal(string shaderCode, string shaderContentType, ILogger logger, ICompilerSettings settings)
