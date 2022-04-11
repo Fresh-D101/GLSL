@@ -11,6 +11,7 @@ namespace DMS.GLSL.Options
 	{
 		private string _userKeyWords1;
 		private string _userKeyWords2;
+		private string _shaderSeparatorKeyword = "#shader";
 
 		[Category("General")]
 		[DisplayName("Arguments for the external compiler executable")]
@@ -21,6 +22,20 @@ namespace DMS.GLSL.Options
 		[DisplayName("External compiler executable file path (without quotes)")]
 		[Description("If non empty this file will be executed for each shader and the output parsed for error squiggles. Can contain environment variables, like % USERPROFILE % and also the Visual Studio variable $(SolutionDir).")]
 		public string ExternalCompilerExeFilePath { get; set; } = string.Empty;
+
+		[Category("General")]
+		[DisplayName("Keyword used to separate multiple shaders in one file.")]
+		[Description("Use this keyword to tell the compiler that a new shader starts on the next line. Everything behind the keyword in the same line is ignored and can be used to name or the describe the upcoming shader. Needs to be used before every shader, even before the first one when using multiple. Can be ignored when the file contains only one shader. Must start with '#'.")]
+		public string ShaderSeparatorKeyword
+		{
+			get => _shaderSeparatorKeyword;
+            set
+            {
+				if (value == null || value == string.Empty || value == "#") return;
+				_shaderSeparatorKeyword = value.Trim();
+				if (!_shaderSeparatorKeyword.StartsWith("#")) _shaderSeparatorKeyword = "#" + _shaderSeparatorKeyword;
+            } 
+		}
 
 		[Category("General")]
 		[DisplayName("Live compiling")]

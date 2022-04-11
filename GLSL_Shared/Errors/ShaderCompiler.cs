@@ -8,6 +8,7 @@ using System.ComponentModel.Composition;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.ExceptionServices;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -26,7 +27,7 @@ namespace DMS.GLSL.Errors
 
 		internal delegate void OnCompilationFinished(IEnumerable<GLSLhelper.ShaderLogLine> errorLog);
 
-		internal void RequestCompile(string shaderCode, string sShaderType, OnCompilationFinished compilationFinishedHandler, string documentDir, int lineOffset = 0)
+		internal void RequestCompile(string shaderCode, string sShaderType, OnCompilationFinished compilationFinishedHandler, string documentDir)
 		{
 			StartGlThreadOnce();
 			while (compileRequests.TryTake(out _)) ; //remove pending compiles
@@ -171,9 +172,11 @@ namespace DMS.GLSL.Errors
 			}
 		}
 
-        private static List<MultiPartShaderData> ExtractShaders(string shaderCode)
+        private static List<MultiPartShaderData> ExtractShaders(string shaderCode, string separator)
         {
-            if (!shaderCode.Contains("#shader")) return new List<MultiPartShaderData> { new MultiPartShaderData(shaderCode, 0) };
+            //if the shader does not start exactly with the separator key word, we assume that it is only one shader
+            string regexPattern = $@"^\B#\b{separator.Substring(1)}\b";
+            if (!Regex.IsMatch(shaderCode.Trim(), regexPattern)) return new List<MultiPartShaderData> { new MultiPartShaderData(shaderCode, 0) };
 
             var shaders = new List<MultiPartShaderData>();
 
@@ -186,7 +189,7 @@ namespace DMS.GLSL.Errors
             {
                 offset++;
 
-                if (line.Contains("#shader"))
+                if (Regex.IsMatch(line.Trim(), regexPattern))
                 {
                     if (shaderIndex != -1)
                     {
@@ -208,17 +211,14 @@ namespace DMS.GLSL.Errors
 
         private static IEnumerable<GLSLhelper.ShaderLogLine> Compile(string shaderCode, string shaderContentType, ILogger logger, ICompilerSettings settings)
 		{
-            //if multi shader, compile for each and add the offset to the logging
-
-            var shaderLogs = new List<GLSLhelper.ShaderLogLine>();
-
-            var shaders = ExtractShaders(shaderCode);
+            var shaders = ExtractShaders(shaderCode, settings.ShaderSeparatorKeyword);
+			var shaderLogs = new List<GLSLhelper.ShaderLogLine>();
 
             if (shaders.Count > 1 && shaderContentType != ShaderContentTypes.AutoDetect)
             {
                 var message = $"Error: Multiple shaders are only allowed with content type: {ShaderContentTypes.AutoDetect }";
                 logger.Log(message, true);
-                return new List<GLSLhelper.ShaderLogLine>();
+                return shaderLogs;
             }
 
             foreach (var shader in shaders)
@@ -241,12 +241,13 @@ namespace DMS.GLSL.Errors
 
                 var errorLog = new GLSLhelper.ShaderLogParser(log);
 
-                if (shader.LineOffset == 0) continue;
-
-                foreach (var error in errorLog.Lines)
+                if (shader.LineOffset != 0)
                 {
-                    if (error.LineNumber.HasValue) error.LineNumber += shader.LineOffset;
-                }
+					foreach (var error in errorLog.Lines)
+					{
+						if (error.LineNumber.HasValue) error.LineNumber += shader.LineOffset;
+					}
+				}
 
                 shaderLogs.AddRange(errorLog.Lines);
             }
