@@ -29,12 +29,12 @@ namespace DMS.GLSL.Options
 		public string ShaderSeparatorKeyword
 		{
 			get => _shaderSeparatorKeyword;
-            set
-            {
+			set
+			{
 				if (value == null || value == string.Empty || value == "#") return;
 				_shaderSeparatorKeyword = value.Trim();
 				if (!_shaderSeparatorKeyword.StartsWith("#")) _shaderSeparatorKeyword = "#" + _shaderSeparatorKeyword;
-            } 
+			} 
 		}
 
 		[Category("General")]

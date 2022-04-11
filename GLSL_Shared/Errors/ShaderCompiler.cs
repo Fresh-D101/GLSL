@@ -51,17 +51,17 @@ namespace DMS.GLSL.Errors
 			public string DocumentDir { get; }
 		}
 
-        private struct MultiPartShaderData
-        {
-            public MultiPartShaderData(string shaderCode, int lineOffset)
-            {
-                ShaderCode = shaderCode;
-                LineOffset = lineOffset;
-            }
+		private struct MultiPartShaderData
+		{
+			public MultiPartShaderData(string shaderCode, int lineOffset)
+			{
+				ShaderCode = shaderCode;
+				LineOffset = lineOffset;
+			}
 
-            public string ShaderCode { get; set; }
-            public int LineOffset { get; set; }
-        }
+			public string ShaderCode { get; set; }
+			public int LineOffset { get; set; }
+		}
 
 		private static readonly IReadOnlyDictionary<string, ShaderType> mappingContentTypeToShaderType = new Dictionary<string, ShaderType>()
 		{
@@ -94,12 +94,12 @@ namespace DMS.GLSL.Errors
 				var compileData = compileRequests.Take(); //block until compile requested
 				var expandedCode = ExpandedCode(compileData.ShaderCode, compileData.DocumentDir, settings);
 				var errorLogLines = Compile(expandedCode, compileData.ShaderType, logger, settings);
-                var rawLog = string.Join("\n", errorLogLines);
-                if (!string.IsNullOrWhiteSpace(rawLog) && settings.PrintShaderCompilerLog)
-                {
-                    logger.Log($"Dumping shader log:\n{rawLog}\n", false);
-                }
-                compileData.CompilationFinished?.Invoke(errorLogLines);
+				var rawLog = string.Join("\n", errorLogLines);
+				if (!string.IsNullOrWhiteSpace(rawLog) && settings.PrintShaderCompilerLog)
+				{
+					logger.Log($"Dumping shader log:\n{rawLog}\n", false);
+				}
+				compileData.CompilationFinished?.Invoke(errorLogLines);
 			}
 		}
 
@@ -172,87 +172,87 @@ namespace DMS.GLSL.Errors
 			}
 		}
 
-        private static List<MultiPartShaderData> ExtractShaders(string shaderCode, string separator)
-        {
-            //if the shader does not start exactly with the separator key word, we assume that it is only one shader
-            string regexPattern = $@"^\B#\b{separator.Substring(1)}\b";
-            if (!Regex.IsMatch(shaderCode.Trim(), regexPattern)) return new List<MultiPartShaderData> { new MultiPartShaderData(shaderCode, 0) };
-
-            var shaders = new List<MultiPartShaderData>();
-
-            int shaderIndex = -1;
-            int offset = 0;
-            MultiPartShaderData currentShader = default;
-            StringReader reader = new StringReader(shaderCode);
-            string line;
-            while ((line = reader.ReadLine()) != null)
-            {
-                offset++;
-
-                if (Regex.IsMatch(line.Trim(), regexPattern))
-                {
-                    if (shaderIndex != -1)
-                    {
-                        shaders.Insert(shaderIndex, currentShader);
-                    }
-                   
-                    currentShader = new MultiPartShaderData("", offset);
-                    shaderIndex++;
-                    continue;
-                }
-
-                currentShader.ShaderCode += line + Environment.NewLine;
-            }
-            // Add last shader to the list
-            shaders.Insert(shaderIndex, currentShader);
-
-            return shaders;
-        }
-
-        private static IEnumerable<GLSLhelper.ShaderLogLine> Compile(string shaderCode, string shaderContentType, ILogger logger, ICompilerSettings settings)
+		private static List<MultiPartShaderData> ExtractShaders(string shaderCode, string separator)
 		{
-            var shaders = ExtractShaders(shaderCode, settings.ShaderSeparatorKeyword);
+			//if the shader does not start exactly with the separator key word, we assume that it is only one shader
+			string regexPattern = $@"^\B#\b{separator.Substring(1)}\b";
+			if (!Regex.IsMatch(shaderCode.Trim(), regexPattern)) return new List<MultiPartShaderData> { new MultiPartShaderData(shaderCode, 0) };
+
+			var shaders = new List<MultiPartShaderData>();
+
+			int shaderIndex = -1;
+			int offset = 0;
+			MultiPartShaderData currentShader = default;
+			StringReader reader = new StringReader(shaderCode);
+			string line;
+			while ((line = reader.ReadLine()) != null)
+			{
+				offset++;
+
+				if (Regex.IsMatch(line.Trim(), regexPattern))
+				{
+					if (shaderIndex != -1)
+					{
+						shaders.Insert(shaderIndex, currentShader);
+					}
+				   
+					currentShader = new MultiPartShaderData("", offset);
+					shaderIndex++;
+					continue;
+				}
+
+				currentShader.ShaderCode += line + Environment.NewLine;
+			}
+			// Add last shader to the list
+			shaders.Insert(shaderIndex, currentShader);
+
+			return shaders;
+		}
+
+		private static IEnumerable<GLSLhelper.ShaderLogLine> Compile(string shaderCode, string shaderContentType, ILogger logger, ICompilerSettings settings)
+		{
+			var shaders = ExtractShaders(shaderCode, settings.ShaderSeparatorKeyword);
 			var shaderLogs = new List<GLSLhelper.ShaderLogLine>();
 
-            if (shaders.Count > 1 && shaderContentType != ShaderContentTypes.AutoDetect)
-            {
-                var message = $"Error: Multiple shaders are only allowed with content type: {ShaderContentTypes.AutoDetect }";
-                logger.Log(message, true);
-                return shaderLogs;
-            }
+			if (shaders.Count > 1 && shaderContentType != ShaderContentTypes.AutoDetect)
+			{
+				var message = $"Error: Multiple shaders are only allowed with content type: {ShaderContentTypes.AutoDetect }";
+				logger.Log(message, true);
+				return shaderLogs;
+			}
 
-            foreach (var shader in shaders)
-            {
-                string log;
+			foreach (var shader in shaders)
+			{
+				string log;
 
-                if (ShaderContentTypes.AutoDetect == shaderContentType)
-                {
-                    shaderContentType = AutoDetectShaderContentType(shader.ShaderCode);
-                    logger.Log($"Auto detecting shader type to '{shaderContentType}'", true);
-                }
-                if (string.IsNullOrWhiteSpace(settings.ExternalCompilerExeFilePath))
-                {
-                    log = CompileOnGPU(shader.ShaderCode, shaderContentType, logger);
-                }
-                else
-                {
-                    log = CompileExternal(shader.ShaderCode, shaderContentType, logger, settings);
-                }
+				if (ShaderContentTypes.AutoDetect == shaderContentType)
+				{
+					shaderContentType = AutoDetectShaderContentType(shader.ShaderCode);
+					logger.Log($"Auto detecting shader type to '{shaderContentType}'", true);
+				}
+				if (string.IsNullOrWhiteSpace(settings.ExternalCompilerExeFilePath))
+				{
+					log = CompileOnGPU(shader.ShaderCode, shaderContentType, logger);
+				}
+				else
+				{
+					log = CompileExternal(shader.ShaderCode, shaderContentType, logger, settings);
+				}
 
-                var errorLog = new GLSLhelper.ShaderLogParser(log);
+				var errorLog = new GLSLhelper.ShaderLogParser(log);
 
-                if (shader.LineOffset != 0)
-                {
+				if (shader.LineOffset != 0)
+				{
 					foreach (var error in errorLog.Lines)
 					{
 						if (error.LineNumber.HasValue) error.LineNumber += shader.LineOffset;
 					}
 				}
 
-                shaderLogs.AddRange(errorLog.Lines);
-            }
+				shaderLogs.AddRange(errorLog.Lines);
+			}
 
-            return shaderLogs;
+			return shaderLogs;
 		}
 
 		private static string CompileExternal(string shaderCode, string shaderContentType, ILogger logger, ICompilerSettings settings)
